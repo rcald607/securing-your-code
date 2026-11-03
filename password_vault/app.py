@@ -5,6 +5,7 @@ import logging
 import os
 import sqlite3
 from pathlib import Path
+from typing import Callable
 
 from crypto_utils import create_fernet, create_key_verifier
 from logger_config import configure_logging
@@ -29,62 +30,94 @@ def _show_menu() -> None:
     )
 
 
-def _read_identity() -> tuple[str, str]:
-    """Prompt for the service and username that identify an entry."""
-    return input("Service: "), input("Username: ")
+def _add_entry(vault: VaultOperations) -> None:
+    """Prompt for and store a new service credential."""
+    service = input("Service: ")
+    username = input("Username: ")
+    password = getpass.getpass("Password (input hidden): ")
+    vault.add_credential(service, username, password)
+    print("Credential saved.")
+    LOGGER.info("Added credential for service %s.", service.strip())
+
+
+def _list_entries(vault: VaultOperations) -> None:
+    """List stored service names without exposing credentials."""
+    entries = vault.list_credentials()
+    if not entries:
+        print("The vault is empty.")
+    else:
+        for entry in entries:
+            print(f"- {entry.service}")
+    LOGGER.info("Listed credential metadata.")
+
+
+def _retrieve_entry(vault: VaultOperations) -> None:
+    """Retrieve and display a service's username and password."""
+    service = input("Service name to retrieve: ").strip()
+    username, password = vault.retrieve_password(service)
+    print(f"Service: {service}")
+    print(f"Username: {username}")
+    print(f"Password: {password}")
+    LOGGER.info("Retrieved credential for service %s.", service)
+
+
+def _delete_entry(vault: VaultOperations) -> None:
+    """Confirm and delete a service credential."""
+    service = input("Service name to delete: ").strip()
+    if not any(entry.service == service for entry in vault.list_credentials()):
+        print("Service not found in vault.")
+        return
+    confirmation = input(f"Delete '{service}'? (y/n): ").strip().lower()
+    if confirmation != "y":
+        print("Deletion cancelled.")
+        return
+    if vault.delete_credential(service):
+        print("Credential deleted.")
+        LOGGER.info("Deleted credential for service %s.", service)
+
+
+def _generate_password(vault: VaultOperations) -> None:
+    """Generate and display a secure password."""
+    length = int(input("Password length (12-128): "))
+    generated = vault.generate_password(length)
+    print(f"Generated password: {generated}")
+    LOGGER.info("Generated a password.")
+
+
+def _check_strength(vault: VaultOperations) -> None:
+    """Check password strength without echoing the entered value."""
+    password = getpass.getpass("Password to check (input hidden): ")
+    print(f"Strength: {vault.check_password_strength(password)}")
+    LOGGER.info("Checked password strength.")
+
+
+def _export_report(vault: VaultOperations) -> None:
+    """Export a CSV inventory containing metadata only."""
+    report_path = input("CSV report path: ").strip()
+    vault.export_report(report_path)
+    print(f"Metadata report exported to {report_path}.")
+    LOGGER.info("Exported a metadata-only vault report.")
 
 
 def _run_action(choice: str, vault: VaultOperations) -> bool:
-    """Run one menu action and return whether the application should continue."""
-    if choice == "1":
-        service, username = _read_identity()
-        password = getpass.getpass("Password (input hidden): ")
-        vault.add_credential(service, username, password)
-        print("Credential saved.")
-        LOGGER.info("Added credential for service %s.", service.strip())
-    elif choice == "2":
-        entries = vault.list_credentials()
-        if not entries:
-            print("The vault is empty.")
-        else:
-            for entry in entries:
-                print(f"- {entry.service}")
-        LOGGER.info("Listed credential metadata.")
-    elif choice == "3":
-        service = input("Service name to retrieve: ").strip()
-        username, password = vault.retrieve_password(service)
-        print(f"Service: {service}")
-        print(f"Username: {username}")
-        print(f"Password: {password}")
-        LOGGER.info("Retrieved credential for service %s.", service.strip())
-    elif choice == "4":
-        service = input("Service name to delete: ").strip()
-        if not any(entry.service == service for entry in vault.list_credentials()):
-            print("Service not found in vault.")
-        elif input(f"Delete '{service}'? (y/n): ").strip().lower() != "y":
-            print("Deletion cancelled.")
-        elif vault.delete_credential(service):
-            print("Credential deleted.")
-            LOGGER.info("Deleted credential for service %s.", service.strip())
-    elif choice == "5":
-        length = int(input("Password length (12-128): "))
-        generated = vault.generate_password(length)
-        print(f"Generated password: {generated}")
-        LOGGER.info("Generated a password.")
-    elif choice == "6":
-        password = getpass.getpass("Password to check (input hidden): ")
-        print(f"Strength: {vault.check_password_strength(password)}")
-        LOGGER.info("Checked password strength.")
-    elif choice == "7":
-        report_path = input("CSV report path: ").strip()
-        vault.export_report(report_path)
-        print(f"Metadata report exported to {report_path}.")
-        LOGGER.info("Exported a metadata-only vault report.")
-    elif choice == "8":
+    """Run a menu action and return whether the application should continue."""
+    actions: dict[str, Callable[[VaultOperations], None]] = {
+        "1": _add_entry,
+        "2": _list_entries,
+        "3": _retrieve_entry,
+        "4": _delete_entry,
+        "5": _generate_password,
+        "6": _check_strength,
+        "7": _export_report,
+    }
+    if choice == "8":
         print("Vault closed.")
         return False
-    else:
+    action = actions.get(choice)
+    if action is None:
         print("Choose a menu option from 1 to 8.")
+        return True
+    action(vault)
     return True
 
 
