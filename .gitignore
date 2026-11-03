@@ -15,6 +15,10 @@ i18n/*.invalid
 data/chatbot/*.*
 !data/chatbot/.gitkeep
 /data/juiceshop.sqlite-journal
+/password_vault/vault.db
+/password_vault/vault.log
+/password_vault/*.csv
+/.venv/
 
 # Build
 .nyc_output/
